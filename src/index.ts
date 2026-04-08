@@ -1,67 +1,26 @@
-import katex from "katex";
-
-import type { ParseNode, AnyParseNode, NodeType } from "./parseNode.ts";
-
+import type { ParseNode, AnyParseNode, NodeType, Settings } from "./katexStruct.ts";
 import {
-    LATEX_TO_UNICODE,
-    SUPERSCRIPT_MAP,
-    SUBSCRIPT_MAP,
-    ACCENT_COMBINING,
-    XARROW_MAP,
-} from "./data";
+    commandToUnicode,
+    parse,
+    toSubscript,
+    toSuperscript,
+    canConvertToSubscript,
+    canConvertToSuperscript,
+    toUnicodeMAS,
+} from "./utils.ts";
+import type { FontType } from "./utils.ts";
+import { ACCENT_COMBINING, XARROW_MAP } from "./data";
 
-// 辅助函数
-/** 将文本转换为上标 Unicode */
-function toSuperscript(text: string): string {
-    return text
-        .split("")
-        .map(c => SUPERSCRIPT_MAP[c] || c)
-        .join("");
-}
-
-/** 将文本转换为下标 Unicode */
-function toSubscript(text: string): string {
-    return text
-        .split("")
-        .map(c => SUBSCRIPT_MAP[c] || c)
-        .join("");
-}
-
-/** 判断文本是否可完全转换为上标/下标 */
-function canConvertToSuperscript(text: string): boolean {
-    return text.split("").every(c => c in SUPERSCRIPT_MAP);
-}
-
-function canConvertToSubscript(text: string): boolean {
-    return text.split("").every(c => c in SUBSCRIPT_MAP);
-}
-
-/** 转义正则表达式特殊字符 */
-// function escapeRegExp(string: string): string {
-//     return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-// }
-
-// 主转换函数
-
-/**
- * 将 KaTeX AST 节点转换为 Unicode 数学公式字符串
- */
 function astToText(node: AnyParseNode | null | undefined): string {
     if (!node) return "";
 
-    const type = node.type as NodeType;
-
-    switch (type) {
+    switch (node.type as NodeType) {
         // 基础符号类型
         case "atom":
         case "mathord":
         case "textord": {
             const text = (node as ParseNode<"atom" | "mathord" | "textord">).text || "";
-            // 检查是否是 LaTeX 命令（以反斜杠开头）
-            if (text.startsWith("\\")) {
-                return LATEX_TO_UNICODE[text] || text.slice(1); // 去掉反斜杠作为回退
-            }
-            return text;
+            return commandToUnicode(text);
         }
 
         case "spacing": {
@@ -128,7 +87,7 @@ function astToText(node: AnyParseNode | null | undefined): string {
             let result = "";
             // 添加左侧定界符
             if (leftDelim && leftDelim !== ".") {
-                result += LATEX_TO_UNICODE[leftDelim] || leftDelim;
+                result += commandToUnicode(leftDelim);
             }
 
             if (hasBarLine) {
@@ -141,7 +100,7 @@ function astToText(node: AnyParseNode | null | undefined): string {
 
             // 添加右侧定界符
             if (rightDelim && rightDelim !== ".") {
-                result += LATEX_TO_UNICODE[rightDelim] || rightDelim;
+                result += commandToUnicode(rightDelim);
             }
 
             return result;
@@ -169,19 +128,19 @@ function astToText(node: AnyParseNode | null | undefined): string {
         case "leftright": {
             const { body, left, right } = node as ParseNode<"leftright">;
             const content = body.map((n: AnyParseNode) => astToText(n)).join("");
-            const leftDelim = left === "." ? "" : LATEX_TO_UNICODE[left] || left;
-            const rightDelim = right === "." ? "" : LATEX_TO_UNICODE[right] || right;
+            const leftDelim = left === "." ? "" : commandToUnicode(left);
+            const rightDelim = right === "." ? "" : commandToUnicode(right);
             return leftDelim + content + rightDelim;
         }
 
         case "delimsizing": {
             const { delim } = node as ParseNode<"delimsizing">;
-            return LATEX_TO_UNICODE[delim] || delim;
+            return commandToUnicode(delim);
         }
 
         case "middle": {
             const { delim } = node as ParseNode<"middle">;
-            return LATEX_TO_UNICODE[delim] || delim;
+            return commandToUnicode(delim);
         }
 
         // 运算符
@@ -189,10 +148,13 @@ function astToText(node: AnyParseNode | null | undefined): string {
             const { symbol, name, body } = node as ParseNode<"op">;
             if (symbol) {
                 // 符号型运算符（如 ∑, ∏, ∫）
-                return LATEX_TO_UNICODE[name] || name;
+                return commandToUnicode(name);
             } else {
                 // 非符号型运算符（如 \lim, \sin）
-                return body ? body.map((n: AnyParseNode) => astToText(n)).join("") : "";
+                return (
+                    (name ? commandToUnicode(name) : "") +
+                    (body ? body.map((n: AnyParseNode) => astToText(n)).join("") : "")
+                );
             }
         }
 
@@ -300,10 +262,10 @@ function astToText(node: AnyParseNode | null | undefined): string {
 
         // 字体和样式
         case "font": {
-            const { body } = node as ParseNode<"font">;
+            const { body, font } = node as ParseNode<"font">;
             // 暂时忽略字体信息，只返回内容
             // 如需保留字体信息，可添加标记如 [bf ...] 或 [cal ...]
-            return astToText(body);
+            return toUnicodeMAS(astToText(body), font as FontType);
         }
 
         case "styling": {
@@ -485,7 +447,7 @@ function astToText(node: AnyParseNode | null | undefined): string {
         // 中缀操作符
         case "infix": {
             const { replaceWith } = node as ParseNode<"infix">;
-            return LATEX_TO_UNICODE[replaceWith] || replaceWith;
+            return commandToUnicode(replaceWith);
         }
 
         // 内部节点
@@ -497,7 +459,7 @@ function astToText(node: AnyParseNode | null | undefined): string {
         case "accent-token":
         case "op-token": {
             const { text } = node as ParseNode<"accent-token" | "op-token">;
-            return LATEX_TO_UNICODE[text] || text;
+            return commandToUnicode(text);
         }
 
         // 水平盒子
@@ -521,7 +483,7 @@ function astToText(node: AnyParseNode | null | undefined): string {
             }
             // 如果有 text 字段，返回它
             if ("text" in anyNode) {
-                return LATEX_TO_UNICODE[anyNode.text as string] || (anyNode.text as string);
+                return commandToUnicode(anyNode.text as string);
             }
             return "";
         }
@@ -538,25 +500,17 @@ function nodesToText(nodes: AnyParseNode[]): string {
 /**
  * 带选项的转换函数
  */
-export interface AstToTextOptions {
-    /** 是否保留上下标为 ^ 和 _ 格式而非 Unicode */
-    preserveSubSupFormat?: boolean;
-    /** 是否保留分数的 / 格式而非 ⁄ */
-    preserveFracFormat?: boolean;
-    /** 是否添加函数名标记（如 sin、log） */
-    markFunctions?: boolean;
-    /** 自定义映射表扩展 */
-    customMappings?: Record<string, string>;
+export interface Options {
+    katexOptions?: Settings; // 传递给 KaTeX 解析器的选项
+    // /** 是否保留上下标为 ^ 和 _ 格式而非 Unicode */
+    // preserveSubSupFormat?: boolean;
+    // /** 是否保留分数的 / 格式而非 ⁄ */
+    // preserveFracFormat?: boolean;
+    // /** 是否添加函数名标记（如 sin、log） */
+    // markFunctions?: boolean;
+    // /** 自定义映射表扩展 */
+    // customMappings?: Record<string, string>;
 }
-
-// function astToTextWithOptions(
-//     node: AnyParseNode | null | undefined,
-//     options: AstToTextOptions = {}
-// ): string {
-//     // 这里可以实现带选项的转换逻辑
-//     // 暂时直接调用主函数
-//     return astToText(node);
-// }
 
 /**
  * 将 LaTeX 数学表达式转换为 Unicode 纯文本
@@ -564,14 +518,14 @@ export interface AstToTextOptions {
  * @returns Unicode 纯文本表示
  * @throws 如果 KaTeX 解析失败则抛出错误
  */
-export function tex2unicode(latex: string): string {
+export function tex2unicode(latex: string, options?: Options): string {
     if (typeof latex !== "string") {
         throw new TypeError("tex2unicode: expected a string");
     }
     try {
         // 使用 KaTeX 的内部解析器获得 AST
         // 注意：__parse 是内部 API，但多年来稳定可用
-        const parseTree = (katex as any).__parse(latex);
+        const parseTree = parse(latex, options?.katexOptions);
         console.log("KaTeX AST:", JSON.stringify(parseTree, null, 2)); // 调试输出 AST
         if (!parseTree) {
             return "";

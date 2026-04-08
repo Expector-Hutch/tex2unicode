@@ -1,5 +1,39 @@
 // copyed from the source code of KaTeX, with some modifications to fit the needs of this project.
 
+type MacroExpansion = {
+    tokens: Token[];
+    numArgs: number;
+    delimiters?: string[][];
+    unexpandable?: boolean; // used in \let
+};
+type MacroDefinition = string | MacroExpansion | ((arg0: object) => string | MacroExpansion);
+type MacroMap = Record<string, MacroDefinition>;
+
+type StrictFunction = (
+    errorCode: string,
+    errorMsg: string,
+    token?: Token | AnyParseNode
+) => (boolean | string) | null | undefined;
+type AnyTrustContext = object;
+type TrustFunction = (context: AnyTrustContext) => boolean | null | undefined;
+
+export class Settings {
+    displayMode?: boolean;
+    output?: "html" | "mathml" | "htmlAndMathml";
+    leqno?: boolean;
+    fleqn?: boolean;
+    throwOnError?: boolean;
+    errorColor?: string;
+    macros?: MacroMap;
+    minRuleThickness?: number;
+    colorIsTextColor?: boolean;
+    strict?: boolean | "ignore" | "warn" | "error" | StrictFunction;
+    trust?: boolean | TrustFunction;
+    maxSize?: number;
+    maxExpand?: number;
+    globalGroup?: boolean;
+}
+
 type SourceLocation = any;
 type AlignSpec =
     | { type: "separator"; separator: string }
