@@ -21,8 +21,7 @@
     "scripts": {
         "dev": "vite",
         "build": "tsc && vite build",
-        "prepare": "tsc && vite build",
-        "postinstall": "tsc && vite build",
+        "postinstall": "pnpm i && pnpm build",
         "preview": "vite preview",
         "lint": "eslint",
         "lint:fix": "eslint --fix",
