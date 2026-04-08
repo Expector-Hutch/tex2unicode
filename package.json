@@ -18,10 +18,14 @@
             }
         }
     },
+    "files": [
+        "dist"
+    ],
     "scripts": {
         "dev": "vite",
         "build": "tsc && vite build",
         "prepare": "tsc && vite build",
+        "postinstall": "tsc && vite build",
         "preview": "vite preview",
         "lint": "eslint",
         "lint:fix": "eslint --fix",
